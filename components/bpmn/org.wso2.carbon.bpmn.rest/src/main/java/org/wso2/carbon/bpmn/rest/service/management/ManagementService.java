@@ -146,9 +146,12 @@ public class ManagementService implements Microservice {
     @Path("/jobs")
     @Produces({ MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML })
     public DataResponse getJobs(@Context Request request) {
+        Map<String, List<String>> queryParams;
         JobQuery query =  BPMNOSGIService.getManagementService().createJobQuery();
         QueryStringDecoder decoder = new QueryStringDecoder(request.getUri());
-        Map<String, List<String>> queryParams = decoder.parameters();
+        if(decoder.parameters().size() > 0) {
+            queryParams = decoder.parameters();
+        }
         Map<String, String> allRequestParams =
                 Utils.populateRequestParams(jobPropertiesList, queryParams);
         allRequestParams = Utils.prepareCommonParameters(allRequestParams, queryParams);
