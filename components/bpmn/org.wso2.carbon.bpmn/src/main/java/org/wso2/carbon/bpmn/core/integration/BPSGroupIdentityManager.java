@@ -1,18 +1,18 @@
 /**
- *  Copyright (c) 2014, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
- *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *        http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- *//*
+ * Copyright (c) 2014, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ * <p>
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 
 package org.wso2.carbon.bpmn.core.integration;
@@ -22,32 +22,45 @@ import org.activiti.engine.identity.GroupQuery;
 import org.activiti.engine.impl.GroupQueryImpl;
 import org.activiti.engine.impl.Page;
 import org.activiti.engine.impl.cfg.ProcessEngineConfigurationImpl;
-import org.activiti.engine.impl.context.Context;
+//import org.activiti.engine.impl.context.Context;
 import org.activiti.engine.impl.persistence.entity.GroupEntity;
 import org.activiti.engine.impl.persistence.entity.GroupEntityManager;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.bpmn.core.BPMNServerHolder;
-//import org.wso2.carbon.user.api.UserStoreException;
-//import org.wso2.carbon.user.core.UserStoreManager;
+import org.wso2.carbon.bpmn.core.internal.IdentityDataHolder;
+import org.wso2.carbon.security.caas.user.core.bean.Role;
+import org.wso2.carbon.security.caas.user.core.bean.User;
+import org.wso2.carbon.security.caas.user.core.exception.AuthorizationStoreException;
+import org.wso2.carbon.security.caas.user.core.exception.IdentityStoreException;
+import org.wso2.carbon.security.caas.user.core.store.AuthorizationStore;
+import org.wso2.carbon.security.caas.user.core.store.IdentityStore;
+
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
+/**
+ *
+ */
 public class BPSGroupIdentityManager extends GroupEntityManager {
 
     private static Log log = LogFactory.getLog(BPSUserIdentityManager.class);
 
-   // private UserStoreManager userStoreManager;
+    private AuthorizationStore authorizationStore;
+    private IdentityStore identityStore;
 
-   // public BPSGroupIdentityManager(UserStoreManager userStoreManager) {
-    //    this.userStoreManager = userStoreManager;
-    //}
+    public BPSGroupIdentityManager() {
 
-public BPSGroupIdentityManager() {
+        this.authorizationStore = IdentityDataHolder.getInstance().getCarbonRealmService().getAuthorizationStore();
+        this.identityStore = IdentityDataHolder.getInstance().getCarbonRealmService().getIdentityStore();
+    }
 
-     }
+
     @Override
     public Group createNewGroup(String groupId) {
         String msg = "Invoked GroupIdentityManager method is not supported by BPSGroupIdentityManager.";
@@ -69,7 +82,7 @@ public BPSGroupIdentityManager() {
     @Override
     public GroupQuery createNewGroupQuery() {
         return new GroupQueryImpl(((ProcessEngineConfigurationImpl) BPMNServerHolder.getInstance().
-        getEngine().getProcessEngineConfiguration()).getCommandExecutor());
+                getEngine().getProcessEngineConfiguration()).getCommandExecutor());
 
     }
 
@@ -86,22 +99,59 @@ public BPSGroupIdentityManager() {
 
     @Override
     public List<Group> findGroupsByUser(String userId) {
+        String userName = getUserNameForGivenUserId(userId);
         List<Group> groups = new ArrayList<Group>();
-       // try {
-          //  String[] roles = userStoreManager.getRoleListOfUser(userId);
-           //TODO
-        String[] roles = {"admin","everyone"};
-            for (String role : roles) {
-                Group group = new GroupEntity(role);
-                groups.add(group);
-            }
-        */
-/*} catch (UserStoreException e) {
-            String msg = "Failed to get roles of the user: " + userId + ". Returning an empty roles list.";
-            log.error(msg, e);
-        }*//*
+        if(userName.isEmpty()) {
 
+        }
+        else {
+            try {
+
+                List<Role> roles = authorizationStore.getRolesOfUser(userId, identityStore.getUser(userName).getIdentityStoreId());
+
+                groups =roles.stream().map(role -> new GroupEntity(role.getRoleId())).collect(Collectors.toList());
+
+//                for (Role role : roles) {
+//                    Group group = new GroupEntity(role.getRoleId());
+//                    groups.add(group);
+//                }
+
+            } catch (IdentityStoreException | AuthorizationStoreException e) {
+                String msg = "Failed to get roles of the user: " + userId + ". Returning an empty roles list.";
+                log.error(msg, e);
+            }
+
+
+        }
         return groups;
+
+    }
+
+    // todo: get matching username for userid
+    private String getUserNameForGivenUserId(String userId) {
+        String userName = "";
+        try { //todo: need to set length to -1
+            List<org.wso2.carbon.security.caas.user.core.bean.User> users = identityStore.listUsers("%", 0, 10);
+            if(!users.isEmpty()) {
+                Optional<User> matchingObjects = users.stream().
+                        filter(u ->u.getUserId().equals(userId)).
+                        findFirst();
+                if(matchingObjects.isPresent()) {
+                    org.wso2.carbon.security.caas.user.core.bean.User filteredUser = matchingObjects.get();
+                    userName = filteredUser.getUserName();
+                }
+                else{
+                    log.info("No matching user found for userId: " + userId);
+                }
+
+            }
+
+        }
+        catch(IdentityStoreException e ){
+            String msg = "Unable to get username for userId : " +userId ;
+            log.error( msg, e);
+        }
+        return userName;
     }
 
     @Override
@@ -117,4 +167,4 @@ public BPSGroupIdentityManager() {
         throw new UnsupportedOperationException(msg);
     }
 }
-*/
+
